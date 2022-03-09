@@ -5,6 +5,7 @@ from torch.nn.utils import spectral_norm
 
 class CNNBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride):
+        super().__init__()
         self.conv = nn.Sequential(
             spectral_norm(nn.Conv2d(
                 in_channels, out_channels, 3, stride, 1, bias=False, padding_mode="reflect"
@@ -17,8 +18,8 @@ class CNNBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, in_channels=3, features=[64, 128, 256, 512, 512, 1024]):
-        super.__init__()
+    def __init__(self, in_channels=1, features=[64, 128, 256, 512, 512, 1024]):
+        super().__init__()
         self.initial = nn.Sequential(
             spectral_norm(
                 nn.Conv2d(

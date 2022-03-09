@@ -1,2 +1,7 @@
 torch
 torchvision
+nibabel
+SimpleITK
+matplotlib
+tqdm
+albumentations
