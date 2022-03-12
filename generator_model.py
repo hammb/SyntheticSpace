@@ -63,7 +63,7 @@ class Generator(nn.Module):
     def __init__(self, in_channels, features=64, num_residuals=9):
         super().__init__()
         self.initial_down = nn.Sequential(
-            nn.Conv2d(in_channels, features, 7, 1, 3, bias=True, padding_mode="reflect"),
+            nn.Conv2d(in_channels, features, kernel_size=7, stride=1, padding=3, bias=True, padding_mode="reflect"),
             nn.ReLU(inplace=True)
         )
 
