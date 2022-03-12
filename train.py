@@ -42,7 +42,7 @@ def train_fn(
             #G_fake_loss = bce(D_fake, torch.ones_like(D_fake))
             #L1 = l1_loss(y_fake, y) * config.L1_LAMBDA
             #G_loss = G_fake_loss + L1
-            G_loss = VGG_Loss(y_fake.expand(1,3,256,256), y.expand(1,3,256,256))
+            G_loss = VGG_Loss(y_fake.expand(1,3,256,256), y.expand(1,3,256,256)) # Expand single value to RGB
 
         opt_gen.zero_grad()
         g_scaler.scale(G_loss).backward()
