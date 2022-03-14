@@ -5,6 +5,8 @@ from albumentations.pytorch import ToTensorV2
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace"
 VAL_DIR = "/home/AD/b556m/data/SyntheticSpace"
+TEST_DIR = "/home/AD/b556m/data/SyntheticSpaceTest"
+PRED_DIR = "/home/AD/b556m/data/SyntheticSpacePred"
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 1
 NUM_WORKERS = 2
