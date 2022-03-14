@@ -20,6 +20,7 @@ def train_fn(
     loop = tqdm(loader, leave=True)
 
     for idx, (x, y) in enumerate(loop):
+
         x = x.to(config.DEVICE)
         y = y.to(config.DEVICE)
 
