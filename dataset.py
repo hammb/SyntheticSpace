@@ -2,10 +2,29 @@ import nibabel as nib
 import torch
 import os
 from torch.utils.data import Dataset
-from torchvision import transforms
-from PIL import Image
-import numpy as np
-import cv2
+from torch.nn.functional import pad
+from config import BATCH_SIZE
+
+
+def pad_image(output_image_torch):
+    output_image_torch = torch.einsum('ijk->jki', output_image_torch)
+
+    y_shape = output_image_torch.shape[1]
+    x_shape = output_image_torch.shape[2]
+
+    y_pad = (256 - y_shape) // 2
+    x_pad = (256 - x_shape) // 2
+
+    output_image_torch_padded = pad(output_image_torch, (x_pad, x_pad, y_pad, y_pad), mode="constant", value=0)
+
+    if output_image_torch_padded.shape[2] != 256:
+        output_image_torch_padded = pad(output_image_torch_padded, (1, 0), mode="constant", value=0)
+
+    if output_image_torch_padded.shape[1] != 256:
+        output_image_torch_padded = pad(output_image_torch_padded, (0, 0, 1, 0), mode="constant", value=0)
+
+    return output_image_torch_padded
+
 
 class ScratchDataset(Dataset):
     def __init__(self, root_dir):
@@ -24,19 +43,18 @@ class ScratchDataset(Dataset):
         input_image = nib.load(input_image_path)
         output_image = nib.load(output_image_path)
 
-        rand_slice = int(torch.rand(1) * input_image.shape[1])
-        rand_slice = 100
+        output_image = output_image.get_fdata()
+        output_image_torch = torch.tensor(output_image)
+        output_image_torch = output_image_torch / 1435.0
 
-        space_slice = input_image.get_fdata()[:, rand_slice, :] / 2351.892578125
-        mprage_slice = output_image.get_fdata()[:, rand_slice, :] / 1033.0
+        output_image_torch = pad_image(output_image_torch)
 
-        space_slice = cv2.resize(space_slice, dsize=(256, 256), interpolation=cv2.INTER_NEAREST)
-        mprage_slice = cv2.resize(mprage_slice, dsize=(256, 256), interpolation=cv2.INTER_NEAREST)
+        input_image = input_image.get_fdata()
+        input_image_torch = torch.tensor(input_image)
+        input_image_torch = input_image_torch / 5154.285
 
-        space_slice = np.expand_dims(space_slice, 0).astype(np.float32)
-        mprage_slice = np.expand_dims(mprage_slice, 0).astype(np.float32)
+        input_image_torch = pad_image(input_image_torch)
 
-        #space_slice = np.einsum('ijk->kji', space_slice)
-        #mprage_slice = np.einsum('ijk->kji', mprage_slice)
+        indices = torch.randperm(output_image_torch.shape[0])[:BATCH_SIZE]
 
-        return space_slice, mprage_slice
+        return output_image_torch[indices,:,:].float(), input_image_torch[indices,:,:].float()
