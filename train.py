@@ -15,7 +15,7 @@ from torchvision.utils import save_image
 torch.backends.cudnn.benchmark = True
 
 def train_fn(
-        disc, gen, loader, opt_disc, opt_gen, l1_loss, bce, VGG_Loss, g_scaler, d_scaler,
+        disc, gen, loader, opt_disc, opt_gen, bce, VGG_Loss, g_scaler, d_scaler,
 ):
     loop = tqdm(loader, leave=True)
 
@@ -62,7 +62,7 @@ gen = Generator(in_channels=1, features=64).to(config.DEVICE)
 opt_disc = optim.Adam(disc.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
 opt_gen = optim.Adam(gen.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
 BCE = nn.BCEWithLogitsLoss()
-L1_LOSS = nn.L1Loss()
+#L1_LOSS = nn.L1Loss()
 VGG_Loss = VGGLoss()
 
 if config.LOAD_MODEL:
@@ -87,7 +87,7 @@ val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
 for epoch in range(config.NUM_EPOCHS):
     train_fn(
-        disc, gen, train_loader, opt_disc, opt_gen, L1_LOSS, BCE, VGG_Loss, g_scaler, d_scaler,
+        disc, gen, train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler,
     )
 
     if config.SAVE_MODEL and epoch % 5 == 0:
