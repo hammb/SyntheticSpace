@@ -49,7 +49,7 @@ def safe_image(head, rid):
 
     os.makedirs(os.path.join(config.PRED_DIR, rid), exist_ok=True)
 
-    sitk.WriteImage(head, os.path.join(config.PRED_DIR, rid, "fake.nii.gz"))
+    sitk.WriteImage(head, os.path.join(config.PRED_DIR, rid, "mp2spc.nii.gz"))
 
 
 with torch.no_grad():
@@ -62,4 +62,3 @@ with torch.no_grad():
             head = y_fake.cpu().detach().numpy()[0] if slice_idx == 0 else np.append(head, y_fake.cpu().detach().numpy()[0],
                                                                                   axis=0)
         safe_image(head, test_dataset.list_samples[idx])
-
