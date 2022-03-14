@@ -27,7 +27,8 @@ def pad_image(output_image_torch):
 
 
 class ScratchDataset(Dataset):
-    def __init__(self, root_dir):
+    def __init__(self, root_dir, rand_slices=True):
+        self.rand_slices = rand_slices
         self.root_dir = root_dir
         self.list_samples = os.listdir(self.root_dir)
 
@@ -55,6 +56,8 @@ class ScratchDataset(Dataset):
 
         input_image_torch = pad_image(input_image_torch)
 
-        indices = torch.randperm(output_image_torch.shape[0])[:BATCH_SIZE]
+        if self.rand_slices:
+            indices = torch.randperm(output_image_torch.shape[0])[:BATCH_SIZE]
+            return input_image_torch[indices,:,:].float(), output_image_torch[indices,:,:].float()
 
-        return output_image_torch[indices,:,:].float(), input_image_torch[indices,:,:].float()
+        return input_image_torch.float(), output_image_torch.float()
