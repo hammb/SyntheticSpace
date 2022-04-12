@@ -59,8 +59,8 @@ class Block(nn.Module):
         return self.conv(x)
 
 
-class Generator(nn.Module):
-    def __init__(self, in_channels, features=64, num_residuals=9):
+class GeneratorMultipleInputs(nn.Module):
+    def __init__(self, in_channels, out_channels, features=64, num_residuals=9):
         super().__init__()
         self.initial_down = nn.Sequential(
             nn.Conv2d(in_channels, features, kernel_size=7, stride=1, padding=3, bias=True, padding_mode="reflect"),
@@ -79,7 +79,7 @@ class Generator(nn.Module):
         self.final_conv = nn.Sequential(
             Block(features * 2, features, stride=1, act="relu"),
             Block(features, features, stride=1, act="relu"),
-            nn.Conv2d(features, in_channels, kernel_size=7, stride=1, padding=3, padding_mode="reflect"),
+            nn.Conv2d(features, out_channels, kernel_size=7, stride=1, padding=3, padding_mode="reflect"),
             nn.Tanh(),
         )
 

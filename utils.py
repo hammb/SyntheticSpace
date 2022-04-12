@@ -1,6 +1,13 @@
+import os.path
+import os
 import torch
 import config
 from torchvision.utils import save_image
+import json
+import statistics
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
 
 def save_some_examples(gen, val_loader, epoch, folder):
     """
@@ -39,3 +46,59 @@ def load_checkpoint(checkpoint_file, model, optimizer, lr):
     # and it will lead to many hours of debugging \:
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
+
+
+def save_validation_loss_plot(data, fold):
+    plt.plot(data.keys(), data.values(), 'ro')
+    plt.ylabel('VGG Loss')
+    plt.savefig(os.path.join("fold_" + str(fold), "validation_loss.png"))
+
+
+def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
+    """
+
+    :rtype: object
+    """
+    gen.eval()
+
+    losses = []
+    for batch_idx, (x, y) in enumerate(tqdm(val_loader)):
+
+        x = x.to(config.DEVICE)
+        y = y.to(config.DEVICE)
+
+        for idx in range(x.shape[1]):
+            x_slice = x[:, idx, :, :].unsqueeze(1)
+            y_slice = y[:, idx, :, :].unsqueeze(1)
+
+            with torch.no_grad():
+                y_fake = gen(x_slice)
+                loss = VGG_Loss(y_fake.expand(1, 3, 256, 256), y_slice.expand(1, 3, 256, 256))
+                losses.append(float(loss.detach().to('cpu').numpy()))
+
+    mean_loss = statistics.mean(losses)
+
+    if os.path.exists(os.path.join("fold_" + str(fold), "training_info.json")):
+        f = open(os.path.join("fold_" + str(fold), "training_info.json"), )
+        json_dict = json.load(f)
+        f.close()
+
+        if min(json_dict.values()) > mean_loss:
+            save_checkpoint(gen, opt_gen, filename=os.path.join("fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
+            save_checkpoint(disc, opt_disc, filename=os.path.join("fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
+
+        json_dict[int(epoch)] = mean_loss
+    else:
+        json_dict = {int(epoch): mean_loss}
+
+    out_file = open(os.path.join("fold_" + str(fold), "training_info.json"), "w")
+    json.dump(json_dict, out_file, indent=6)
+    out_file.close()
+
+    save_validation_loss_plot(json_dict, fold)
+
+    if epoch % 10 == 0:
+        save_checkpoint(gen, opt_gen, filename=os.path.join("fold_" + str(fold), config.CHECKPOINT_GEN))
+        save_checkpoint(disc, opt_disc, filename=os.path.join("fold_" + str(fold), config.CHECKPOINT_DISC))
+
+    gen.train()

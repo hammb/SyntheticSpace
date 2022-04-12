@@ -1,12 +1,15 @@
 import torch
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace"
+
+TASK = "Task002_mprage2space"
+
+TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/" + TASK
 VAL_DIR = "/home/AD/b556m/data/SyntheticSpace"
+
 TEST_DIR = "/home/AD/b556m/data/SyntheticSpaceTest"
 PRED_DIR = "/home/AD/b556m/data/SyntheticSpacePred"
+
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 1
 NUM_WORKERS = 2
@@ -17,25 +20,13 @@ LAMBDA_GP = 10
 NUM_EPOCHS = 500
 LOAD_MODEL = False
 SAVE_MODEL = True
+
 CHECKPOINT_DISC = "disc.pth.tar"
 CHECKPOINT_GEN = "gen.pth.tar"
 
-both_transform = A.Compose(
-    [A.Resize(width=256, height=256),], additional_targets={"image0": "image"},
-)
+CHECKPOINT_DISC_BEST = "disc_best.pth.tar"
+CHECKPOINT_GEN_BEST = "gen_best.pth.tar"
 
-transform_only_input = A.Compose(
-    [
-        A.HorizontalFlip(p=0.5),
-        A.ColorJitter(p=0.2),
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
-        ToTensorV2(),
-    ]
-)
-
-transform_only_mask = A.Compose(
-    [
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], max_pixel_value=255.0,),
-        ToTensorV2(),
-    ]
-)
+MAX_VALUE_SPACE = 1582
+MAX_VALUE_MPRAGE = 987
+INPUT_SEQUENCE = "mprage"

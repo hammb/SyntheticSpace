@@ -5,7 +5,7 @@ import torch
 from utils import load_checkpoint
 import torch.optim as optim
 import config
-from dataset import ScratchDataset
+from scratch_dataset import ScratchDataset
 from generator_model import Generator
 from torch.utils.data import DataLoader
 from tqdm import tqdm
