@@ -119,15 +119,17 @@ BCE = nn.BCEWithLogitsLoss()
 # L1_LOSS = nn.L1Loss()
 VGG_Loss = VGGLoss()
 
+fold = 1
+
 if config.LOAD_MODEL:
     load_checkpoint(
-        config.CHECKPOINT_GEN, gen, opt_gen, config.LEARNING_RATE,
+        os.path.join("fold_" + str(fold), config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
     )
     load_checkpoint(
-        config.CHECKPOINT_DISC, disc, opt_disc, config.LEARNING_RATE,
+        os.path.join("fold_" + str(fold), config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
     )
 
-fold = 1
+
 rand_slices = False
 percentage_val_samples = 15
 rand_spacing = True
@@ -164,12 +166,13 @@ val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
 os.makedirs("fold_" + str(fold), exist_ok=True)
 
-for epoch in range(config.NUM_EPOCHS):
-    pre_train_fn(
-        disc, gen, pre_train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler,
-    )
+if config.PRE_TRAINING:
+    for epoch in range(config.NUM_EPOCHS):
+        pre_train_fn(
+            disc, gen, pre_train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler,
+        )
 
-    evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold)
+        evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold)
 
 for epoch in range(config.NUM_EPOCHS, config.NUM_EPOCHS * 2):
     train_fn(
