@@ -1,6 +1,13 @@
 import os
-
+import random
+import argparse
 import torch
+
+from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
+from batchgenerators.transforms.abstract_transforms import Compose
+from batchgenerators_mprage2space import Mprage2space
+from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
+
 from utils import save_checkpoint, load_checkpoint, evaluate
 import torch.nn as nn
 import torch.optim as optim
@@ -17,15 +24,56 @@ from torchvision.utils import save_image
 torch.backends.cudnn.benchmark = True
 
 
-def pre_train_fn(
-        disc, gen, loader, opt_disc, opt_gen, bce, VGG_Loss, g_scaler, d_scaler,
+def get_split():
+    random.seed(config.FOLD)
+
+    all_samples = os.listdir(config.TRAIN_DIR)
+
+    percentage_val_samples = 15
+    # 15% val. data
+
+    num_val_samples = int(len(all_samples) / 100 * percentage_val_samples)
+    val_samples = random.sample(all_samples, num_val_samples)
+
+    train_samples = list(filter(lambda sample: sample not in val_samples, all_samples))
+
+    return train_samples, val_samples
+
+
+def get_train_transform(patch_size):
+    tr_transforms = []
+
+    tr_transforms.append(
+        SpatialTransform_2(
+            patch_size, [i // 2 for i in patch_size],
+            do_elastic_deform=False,
+            do_rotation=True,
+            do_scale=False,
+            random_crop=False,
+            p_rot_per_sample=0.66,
+        )
+    )
+
+    tr_transforms = Compose(tr_transforms)
+    return tr_transforms
+
+
+def train_fn(
+        disc, gen, loader, opt_disc, opt_gen, bce, VGG_Loss, g_scaler, d_scaler, epoch
 ):
-    loop = tqdm(loader, leave=True)
+    loop = tqdm(loader, total=len(loader.generator.indices), leave=True)
+    loop.set_description("Training Epoch Nr.: " + str(epoch))
+    random.seed(epoch)
 
-    for idx, (x, y) in enumerate(loop):
+    for batch_idx, batch in enumerate(loop):
 
-        x = x.to(config.DEVICE)
-        y = y.to(config.DEVICE)
+        start_idx = random.randint(0, 244 - config.RAND_SAMPLE_SIZE - 1)
+
+        x = torch.from_numpy(batch["data"][:, :, :, :, start_idx:start_idx+config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
+        y = torch.from_numpy(batch["seg"][:, :, :, :, start_idx:start_idx+config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
+
+        x = torch.einsum('ijkl->lijk', torch.squeeze(x)[None, :, :, :])
+        y = torch.einsum('ijkl->lijk', torch.squeeze(y)[None, :, :, :])
 
         # Train Discriminator
         with torch.cuda.amp.autocast():
@@ -35,54 +83,6 @@ def pre_train_fn(
             D_fake = disc(x, y_fake.detach())
             D_fake_loss = bce(D_fake, torch.zeros_like(D_fake))
             D_loss = (D_real_loss + D_fake_loss) / 2
-
-        disc.zero_grad()
-        d_scaler.scale(D_loss).backward()
-        d_scaler.step(opt_disc)
-        d_scaler.update()
-        # Train generator
-        with torch.cuda.amp.autocast():
-            # D_fake = disc(x, y_fake)
-            # G_fake_loss = bce(D_fake, torch.ones_like(D_fake))
-            # L1 = l1_loss(y_fake, y) * config.L1_LAMBDA
-            # G_loss = G_fake_loss + L1
-            G_loss = VGG_Loss(y_fake.expand(1, 3, 256, 256),
-                              y.expand(1, 3, 256, 256))  # Expand single value to RGB
-
-        opt_gen.zero_grad()
-        g_scaler.scale(G_loss).backward()
-        g_scaler.step(opt_gen)
-        g_scaler.update()
-
-        if idx % 10 == 0:
-            loop.set_postfix(
-                D_real=torch.sigmoid(D_real).mean().item(),
-                D_fake=torch.sigmoid(D_fake).mean().item(),
-            )
-
-
-def train_fn(
-        disc, gen, loader, opt_disc, opt_gen, bce, VGG_Loss, g_scaler, d_scaler,
-):
-    loop = tqdm(loader, leave=True)
-
-    for batch_idx, (x, y) in enumerate(loop):
-
-        x = x.to(config.DEVICE)
-        y = y.to(config.DEVICE)
-
-        for idx in range(x.shape[1]):
-            x_slice = x[:, idx, :, :].unsqueeze(1)
-            y_slice = y[:, idx, :, :].unsqueeze(1)
-
-            # Train Discriminator
-            with torch.cuda.amp.autocast():
-                y_fake = gen(x_slice)
-                D_real = disc(x_slice, y_slice)
-                D_real_loss = bce(D_real, torch.ones_like(D_real))
-                D_fake = disc(x_slice, y_fake.detach())
-                D_fake_loss = bce(D_fake, torch.zeros_like(D_fake))
-                D_loss = (D_real_loss + D_fake_loss) / 2
 
             disc.zero_grad()
             d_scaler.scale(D_loss).backward()
@@ -94,8 +94,8 @@ def train_fn(
                 # G_fake_loss = bce(D_fake, torch.ones_like(D_fake))
                 # L1 = l1_loss(y_fake, y) * config.L1_LAMBDA
                 # G_loss = G_fake_loss + L1
-                G_loss = VGG_Loss(y_fake.expand(1, 3, 256, 256),
-                                  y_slice.expand(1, 3, 256, 256))  # Expand single value to RGB
+                G_loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256),
+                                  y.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256))  # Expand single value to RGB
 
             opt_gen.zero_grad()
             g_scaler.scale(G_loss).backward()
@@ -109,74 +109,67 @@ def train_fn(
             )
 
 
-disc = Discriminator(in_channels=1).to(config.DEVICE)
-gen = Generator(in_channels=1, features=64).to(config.DEVICE)
+if __name__ == '__main__':
 
-opt_disc = optim.Adam(disc.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
-opt_gen = optim.Adam(gen.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--fold', default=0,
+                        help='The fold number for k-fold-crossval', required=True, type=int)
+    parser.add_argument('-ss', '--sample_size', default=2,
+                        help='Num of sLices used per patient', required=True, type=int)
 
-BCE = nn.BCEWithLogitsLoss()
-# L1_LOSS = nn.L1Loss()
-VGG_Loss = VGGLoss()
+    args = parser.parse_args()
 
-fold = 1
+    config.FOLD = args.f
+    config.RAND_SAMPLE_SIZE = args.ss
+    # DATA
+    train_samples, val_samples = get_split()
 
-if config.LOAD_MODEL:
-    load_checkpoint(
-        os.path.join("fold_" + str(fold), config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
+    dl_train = Mprage2space(train_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
+                            seed_for_shuffle=config.FOLD,
+                            return_incomplete=False, shuffle=True)
+
+    transform = get_train_transform(config.PATCH_SIZE)
+
+    mt_train = MultiThreadedAugmenter(
+        data_loader=dl_train,
+        transform=transform,
+        num_processes=config.NUM_WORKERS,
     )
-    load_checkpoint(
-        os.path.join("fold_" + str(fold), config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
-    )
 
+    dl_val = Mprage2space(val_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
+                          return_incomplete=False, shuffle=False)
 
-rand_slices = False
-percentage_val_samples = 15
-rand_spacing = True
+    # MODEL
+    disc = Discriminator(in_channels=1).to(config.DEVICE)
+    gen = Generator(in_channels=1, features=64).to(config.DEVICE)
 
-pre_train_dataset = SpaceRt(root_dir=config.TRAIN_DIR, fold=fold, rand_slices=True, val=False,
-                            percentage_val_samples=percentage_val_samples,
-                            rand_spacing=rand_spacing, augmentation=False, input_sequence=config.INPUT_SEQUENCE)
+    opt_disc = optim.Adam(disc.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
+    opt_gen = optim.Adam(gen.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
 
-pre_train_loader = DataLoader(
-    pre_train_dataset,
-    batch_size=config.BATCH_SIZE,
-    shuffle=True,
-    num_workers=config.NUM_WORKERS,
-)
+    BCE = nn.BCEWithLogitsLoss()
+    # L1_LOSS = nn.L1Loss()
+    VGG_Loss = VGGLoss()
 
-train_dataset = SpaceRt(root_dir=config.TRAIN_DIR, fold=fold, rand_slices=rand_slices, val=False,
-                        percentage_val_samples=percentage_val_samples,
-                        rand_spacing=rand_spacing, augmentation=True, input_sequence=config.INPUT_SEQUENCE)
-
-train_loader = DataLoader(
-    train_dataset,
-    batch_size=config.BATCH_SIZE,
-    shuffle=True,
-    num_workers=config.NUM_WORKERS,
-)
-g_scaler = torch.cuda.amp.GradScaler()
-d_scaler = torch.cuda.amp.GradScaler()
-
-val_dataset = SpaceRt(root_dir=config.TRAIN_DIR, fold=fold, rand_slices=rand_slices, val=True,
-                      percentage_val_samples=percentage_val_samples,
-                      rand_spacing=rand_spacing, augmentation=False, input_sequence=config.INPUT_SEQUENCE)
-
-val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
-
-os.makedirs("fold_" + str(fold), exist_ok=True)
-
-if config.PRE_TRAINING:
-    for epoch in range(config.NUM_EPOCHS):
-        pre_train_fn(
-            disc, gen, pre_train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler,
+    if config.LOAD_MODEL:
+        load_checkpoint(
+            os.path.join("fold_" + str(config.FOLD), config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
+        )
+        load_checkpoint(
+            os.path.join("fold_" + str(config.FOLD), config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
         )
 
-        evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold)
+    rand_slices = False
+    percentage_val_samples = 15
+    rand_spacing = True
 
-for epoch in range(config.NUM_EPOCHS, config.NUM_EPOCHS * 2):
-    train_fn(
-        disc, gen, train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler,
-    )
+    g_scaler = torch.cuda.amp.GradScaler()
+    d_scaler = torch.cuda.amp.GradScaler()
 
-    evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold)
+    os.makedirs("fold_" + str(config.FOLD), exist_ok=True)
+
+    for epoch in range(0, config.NUM_EPOCHS):
+        train_fn(
+            disc, gen, mt_train, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
+        )
+
+        evaluate(gen, disc, dl_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)

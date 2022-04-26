@@ -2,7 +2,9 @@ import torch
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-TASK = "Task002_mprage2space"
+FOLD = 0
+CHECKPOINTS = "/home/AD/b556m/projects/tutorials/SyntheticSpace"
+TASK = "Task003_mprage2space"
 
 TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/" + TASK
 VAL_DIR = "/home/AD/b556m/data/SyntheticSpace"
@@ -12,15 +14,17 @@ PRED_DIR = "/home/AD/b556m/data/SyntheticSpacePred"
 
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 1
-NUM_WORKERS = 2
+RAND_SAMPLE_SIZE = 2
+NUM_WORKERS = 10
 IMAGE_SIZE = 256
 CHANNELS_IMG = 1
 L1_LAMBDA = 100
 LAMBDA_GP = 10
-NUM_EPOCHS = 500
-LOAD_MODEL = True
+NUM_EPOCHS = 200
+LOAD_MODEL = False
 PRE_TRAINING = False
 SAVE_MODEL = True
+PATCH_SIZE = (256, 256, 244)
 
 CHECKPOINT_DISC = "disc.pth.tar"
 CHECKPOINT_GEN = "gen.pth.tar"
