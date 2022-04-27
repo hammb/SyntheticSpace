@@ -2,24 +2,15 @@ import os
 import random
 import argparse
 import torch
-
-from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
-from batchgenerators.transforms.abstract_transforms import Compose
-from batchgenerators_mprage2space import Mprage2space
-from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
-
-from utils import save_checkpoint, load_checkpoint, evaluate
+from utils import load_checkpoint, evaluate
 import torch.nn as nn
 import torch.optim as optim
 import config
-from space_rt import SpaceRt
-from generator_model import Generator
-from discriminator_model import Discriminator
-from torch.utils.data import DataLoader
+from dataloading.space_rt import SpaceRt
+from architectures.generator_model import Generator
+from architectures.discriminator_model import Discriminator
 from tqdm import tqdm
-from vgg_loss import VGGLoss
-
-from torchvision.utils import save_image
+from loss_functions.vgg_loss import VGGLoss
 
 torch.backends.cudnn.benchmark = True
 
@@ -38,24 +29,6 @@ def get_split():
     train_samples = list(filter(lambda sample: sample not in val_samples, all_samples))
 
     return train_samples, val_samples
-
-
-def get_train_transform(patch_size):
-    tr_transforms = []
-
-    tr_transforms.append(
-        SpatialTransform_2(
-            patch_size, [i // 2 for i in patch_size],
-            do_elastic_deform=False,
-            do_rotation=True,
-            do_scale=False,
-            random_crop=False,
-            p_rot_per_sample=0.66,
-        )
-    )
-
-    tr_transforms = Compose(tr_transforms)
-    return tr_transforms
 
 
 def train_fn(
@@ -113,31 +86,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--fold', default=0,
-                        help='The fold number for k-fold-crossval', required=True, type=int)
+                        help='The fold number for k-fold-crossval', required=False, type=int)
     parser.add_argument('-ss', '--sample_size', default=2,
-                        help='Num of sLices used per patient', required=True, type=int)
+                        help='Num of sLices used per patient', required=False, type=int)
 
     args = parser.parse_args()
 
-    config.FOLD = args.f
-    config.RAND_SAMPLE_SIZE = args.ss
+    config.FOLD = args.fold
+    config.RAND_SAMPLE_SIZE = args.sample_size
     # DATA
-    train_samples, val_samples = get_split()
 
-    dl_train = Mprage2space(train_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
-                            seed_for_shuffle=config.FOLD,
-                            return_incomplete=False, shuffle=True)
-
-    transform = get_train_transform(config.PATCH_SIZE)
-
-    mt_train = MultiThreadedAugmenter(
-        data_loader=dl_train,
-        transform=transform,
-        num_processes=config.NUM_WORKERS,
-    )
-
-    dl_val = Mprage2space(val_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
-                          return_incomplete=False, shuffle=False)
+    train_dataset = SpaceRt(root_dir=config.TRAIN_DIR, fold=config.FOLD, rand_slices=True, val=False,
+                            percentage_val_samples=15, rand_spacing=False)
 
     # MODEL
     disc = Discriminator(in_channels=1).to(config.DEVICE)

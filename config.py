@@ -4,7 +4,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 FOLD = 0
 CHECKPOINTS = "/home/AD/b556m/projects/tutorials/SyntheticSpace"
-TASK = "Task003_mprage2space"
+TASK = "Task004_mprage2space"
 
 TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/" + TASK
 VAL_DIR = "/home/AD/b556m/data/SyntheticSpace"

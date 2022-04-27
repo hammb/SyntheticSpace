@@ -1,5 +1,4 @@
 import nibabel as nib
-import numpy as np
 import torch
 import os
 from torch.utils.data import Dataset
@@ -8,7 +7,7 @@ from torch.nn.functional import pad
 import config
 from config import BATCH_SIZE
 import random
-from data_augmentation import DefaultDataAugmentation
+from augmentation.data_augmentation import DefaultDataAugmentation
 
 
 def pad_image(output_image_torch):
@@ -137,8 +136,8 @@ class SpaceRt(Dataset):
         output_image_torch = output_image_torch / output_image_max_value  # / 1435.0
 
         # padding
-        input_image_torch = pad_image(input_image_torch)
-        output_image_torch = pad_image(output_image_torch)
+        # input_image_torch = pad_image(input_image_torch)
+        # output_image_torch = pad_image(output_image_torch)
 
         # pick random slice
         if self.rand_slices:
@@ -146,3 +145,4 @@ class SpaceRt(Dataset):
             return input_image_torch[indices, :, :].float(), output_image_torch[indices, :, :].float()
 
         return input_image_torch.float(), output_image_torch.float()
+

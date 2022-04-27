@@ -5,8 +5,8 @@ import torch
 from utils import load_checkpoint
 import torch.optim as optim
 import config
-from scratch_dataset import ScratchDataset
-from generator_model import Generator
+from dataloading.scratch_dataset import ScratchDataset
+from architectures.generator_model import Generator
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import SimpleITK as sitk
