@@ -4,7 +4,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 FOLD = 0
 CHECKPOINTS = "/home/AD/b556m/projects/tutorials/SyntheticSpace"
-TASK = "Task004_mprage2space"
+TASK = "Task003_mprage2space"
 
 TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/" + TASK
 VAL_DIR = "/home/AD/b556m/data/SyntheticSpace"
@@ -21,7 +21,8 @@ CHANNELS_IMG = 1
 L1_LAMBDA = 100
 LAMBDA_GP = 10
 NUM_EPOCHS = 200
-LOAD_MODEL = False
+LOAD_MODEL = True
+LOAD_MODEL_PATH = "/home/AD/b556m/projects/tutorials/SyntheticSpace/fold_0"
 PRE_TRAINING = False
 SAVE_MODEL = True
 PATCH_SIZE = (256, 256, 244)

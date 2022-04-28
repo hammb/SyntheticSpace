@@ -59,6 +59,8 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
 
     :rtype: object
     """
+    os.makedirs(os.path.join(config.CHECKPOINTS, "fold_" + str(config.FOLD)), exist_ok=True)
+
     gen.eval()
     loop = tqdm(val_loader, total=len(val_loader.indices), leave=True)
     loop.set_description("Evaluating Epoch Nr.: " + str(epoch))

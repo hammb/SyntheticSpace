@@ -8,7 +8,7 @@ from batchgenerators.transforms.abstract_transforms import Compose
 from dataloading.batchgenerators_mprage2space import Mprage2space
 from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
 
-from utils import load_checkpoint, evaluate
+from utils.utils_batchgenerators import load_checkpoint, evaluate
 import torch.nn as nn
 import torch.optim as optim
 import config
@@ -160,8 +160,6 @@ if __name__ == '__main__':
 
     g_scaler = torch.cuda.amp.GradScaler()
     d_scaler = torch.cuda.amp.GradScaler()
-
-    os.makedirs("fold_" + str(config.FOLD), exist_ok=True)
 
     for epoch in range(0, config.NUM_EPOCHS):
         train_fn(
