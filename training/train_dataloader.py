@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import random
 import argparse
@@ -12,6 +13,7 @@ from architectures.generator_model import Generator
 from architectures.discriminator_model import Discriminator
 from tqdm import tqdm
 from loss_functions.vgg_loss import VGGLoss
+import json
 
 torch.backends.cudnn.benchmark = True
 
@@ -69,11 +71,20 @@ if __name__ == '__main__':
                         help='The fold number for k-fold-crossval', required=False, type=int)
     parser.add_argument('-ss', '--sample_size', default=2,
                         help='Num of sLices used per patient', required=False, type=int)
+    parser.add_argument('-l', '--load', action='store_true')
+    parser.add_argument('-r', '--resume', action='store_true')
+    parser.add_argument('-p', '--path', default=None,
+                        help='Path to model parameters', required=False, type=str)
 
     args = parser.parse_args()
 
-    config.FOLD = args.fold = 1
+    config.FOLD = args.fold
     config.RAND_SAMPLE_SIZE = args.sample_size
+    config.LOAD_MODEL = args.load
+    config.RESUME_TRAINING = args.resume
+
+    if config.LOAD_MODEL:
+        config.LOAD_MODEL_PATH = args.path
 
     # DATA -------------
     train_dataset = Mprage2space(root_dir=config.TRAIN_DIR, fold=config.FOLD, rand_slices=True, val=False,
@@ -113,11 +124,24 @@ if __name__ == '__main__':
         load_checkpoint(
             os.path.join(config.LOAD_MODEL_PATH, config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
         )
+    if config.RESUME_TRAINING:
+        with open(os.path.join(config.CHECKPOINTS, "fold_" + str(config.FOLD), 'training_info.json'), 'r') as train_file:
+            data = json.load(train_file)
+            config.RESUME_TRAINING_EPOCH = sorted(list(map(int, data.keys())), reverse=True)[0]
+
+        config.RESUME_TRAINING_PATH = os.path.join(config.CHECKPOINTS, "fold_" + str(config.FOLD))
+
+        load_checkpoint(
+            os.path.join(config.RESUME_TRAINING_PATH, config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
+        )
+        load_checkpoint(
+            os.path.join(config.RESUME_TRAINING_PATH, config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
+        )
 
     g_scaler = torch.cuda.amp.GradScaler()
     d_scaler = torch.cuda.amp.GradScaler()
 
-    for epoch in range(0, config.NUM_EPOCHS):
+    for epoch in range(config.RESUME_TRAINING_EPOCH, config.NUM_EPOCHS):
         train_fn(
             disc, gen, train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
         )
