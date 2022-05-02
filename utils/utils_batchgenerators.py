@@ -51,7 +51,24 @@ def load_checkpoint(checkpoint_file, model, optimizer, lr):
 def save_validation_loss_plot(data, fold):
     plt.plot(data.keys(), data.values(), 'ro')
     plt.ylabel('VGG Loss')
-    plt.savefig(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "validation_loss.png"))
+    plt.savefig(
+        os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "validation_loss.png"))
+
+
+def ev(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
+    os.makedirs(os.path.join(config.CHECKPOINTS, config.TRAINER), exist_ok=True)
+    os.makedirs(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(config.FOLD)),
+                exist_ok=True)
+
+    gen.eval()
+    loop = tqdm(val_loader, total=len(val_loader.generator.indices), leave=True)
+    loop.set_description("Evaluating Epoch Nr.: " + str(epoch))
+
+    losses = []
+    for batch_idx, batch in enumerate(loop):
+        x = torch.from_numpy(batch["data"]).to(config.DEVICE)
+        y = torch.from_numpy(batch["seg"]).to(config.DEVICE)
+        print(x.shape)
 
 
 def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
@@ -59,10 +76,14 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
 
     :rtype: object
     """
-    os.makedirs(os.path.join(config.CHECKPOINTS, "fold_" + str(config.FOLD)), exist_ok=True)
+
+    os.makedirs(os.path.join(config.CHECKPOINTS, config.TRAINER), exist_ok=True)
+    os.makedirs(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(config.FOLD)),
+                exist_ok=True)
 
     gen.eval()
-    loop = tqdm(val_loader, total=len(val_loader.indices), leave=True)
+
+    loop = tqdm(val_loader, total=len(val_loader.generator.indices), leave=True)
     loop.set_description("Evaluating Epoch Nr.: " + str(epoch))
 
     losses = []
@@ -71,45 +92,48 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
         x = torch.from_numpy(batch["data"]).to(config.DEVICE)
         y = torch.from_numpy(batch["seg"]).to(config.DEVICE)
 
-        x = torch.einsum('ijkl->lijk', torch.squeeze(x)[None, :, :, :])
-        y = torch.einsum('ijkl->lijk', torch.squeeze(y)[None, :, :, :])
+        x = torch.reshape(x, (-1, 1, 256, 256))
+        y = torch.reshape(y, (-1, 1, 256, 256))
 
-        for slice_idx in range(244 // config.RAND_SAMPLE_SIZE):
-
-            start_idx = slice_idx * config.RAND_SAMPLE_SIZE
-            end_idx = ((slice_idx + 1) * config.RAND_SAMPLE_SIZE)
-
-            x_slice = x[start_idx:end_idx, :, :, :]
-            y_slice = y[start_idx:end_idx, :, :, :]
-
-            with torch.no_grad():
-                y_fake = gen(x_slice)
-                loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256), y_slice.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256))
-                losses.append(float(loss.detach().to('cpu').numpy()))
+        with torch.no_grad():
+            y_fake = gen(x)
+            loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256),
+                            y.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256))
+            losses.append(float(loss.detach().to('cpu').numpy()))
 
     mean_loss = statistics.mean(losses)
 
-    if os.path.exists(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json")):
-        f = open(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json"), )
+    if os.path.exists(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold),
+                                   "training_info.json")):
+        f = open(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold),
+                              "training_info.json"), )
         json_dict = json.load(f)
         f.close()
 
         if min(json_dict.values()) > mean_loss:
-            save_checkpoint(gen, opt_gen, filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
-            save_checkpoint(disc, opt_disc, filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
+            save_checkpoint(gen, opt_gen, filename=os.path.join(config.CHECKPOINTS, config.TRAINER,
+                                                                "fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
+            save_checkpoint(disc, opt_disc, filename=os.path.join(config.CHECKPOINTS, config.TRAINER,
+                                                                  "fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
 
         json_dict[int(epoch)] = mean_loss
     else:
         json_dict = {int(epoch): mean_loss}
 
-    out_file = open(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json"), "w")
+    out_file = open(
+        os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "training_info.json"),
+        "w")
     json.dump(json_dict, out_file, indent=6)
     out_file.close()
 
     save_validation_loss_plot(json_dict, fold)
 
     if epoch % 10 == 0:
-        save_checkpoint(gen, opt_gen, filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_GEN))
-        save_checkpoint(disc, opt_disc, filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_DISC))
+        save_checkpoint(gen, opt_gen,
+                        filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold),
+                                              config.CHECKPOINT_GEN))
+        save_checkpoint(disc, opt_disc,
+                        filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold),
+                                              config.CHECKPOINT_DISC))
 
     gen.train()

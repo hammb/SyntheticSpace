@@ -51,7 +51,7 @@ def load_checkpoint(checkpoint_file, model, optimizer, lr):
 def save_validation_loss_plot(data, fold):
     plt.plot(data.keys(), data.values(), 'ro')
     plt.ylabel('VGG Loss')
-    plt.savefig(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "validation_loss.png"))
+    plt.savefig(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "validation_loss.png"))
 
 
 def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
@@ -60,7 +60,8 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
     :rtype: object
     """
 
-    os.makedirs(os.path.join(config.CHECKPOINTS, "fold_" + str(config.FOLD)), exist_ok=True)
+    os.makedirs(os.path.join(config.CHECKPOINTS, ), exist_ok=True)
+    os.makedirs(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(config.FOLD)), exist_ok=True)
 
     gen.eval()
     loop = tqdm(val_loader, leave=True)
@@ -83,22 +84,22 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
 
     mean_loss = statistics.mean(losses)
 
-    if os.path.exists(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json")):
-        f = open(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json"), )
+    if os.path.exists(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "training_info.json")):
+        f = open(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "training_info.json"), )
         json_dict = json.load(f)
         f.close()
 
         if min(json_dict.values()) > mean_loss:
             save_checkpoint(gen, opt_gen,
-                            filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
+                            filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
             save_checkpoint(disc, opt_disc,
-                            filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
+                            filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
 
         json_dict[int(epoch)] = mean_loss
     else:
         json_dict = {int(epoch): mean_loss}
 
-    out_file = open(os.path.join(config.CHECKPOINTS, "fold_" + str(fold), "training_info.json"), "w")
+    out_file = open(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "training_info.json"), "w")
     json.dump(json_dict, out_file, indent=6)
     out_file.close()
 
@@ -106,8 +107,8 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
 
     if epoch % 10 == 0:
         save_checkpoint(gen, opt_gen,
-                        filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_GEN))
+                        filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), config.CHECKPOINT_GEN))
         save_checkpoint(disc, opt_disc,
-                        filename=os.path.join(config.CHECKPOINTS, "fold_" + str(fold), config.CHECKPOINT_DISC))
+                        filename=os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), config.CHECKPOINT_DISC))
 
     gen.train()
