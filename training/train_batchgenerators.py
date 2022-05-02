@@ -1,24 +1,27 @@
+#!/usr/bin/env python3
+import json
 import os
 import random
-import argparse
+
 import torch
-
-from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
-from batchgenerators.transforms.abstract_transforms import Compose
-from dataloading.batchgenerators_mprage2space import Mprage2space
-from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
-
-from utils.utils_batchgenerators import load_checkpoint, evaluate
 import torch.nn as nn
 import torch.optim as optim
-import config
-from architectures.generator_model import Generator
-from architectures.discriminator_model import Discriminator
+from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
+from batchgenerators.transforms.abstract_transforms import Compose
+from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
 from tqdm import tqdm
+
+import config
+from architectures.discriminator_model import Discriminator
+from architectures.generator_model import Generator
+from dataloading.batchgenerators_mprage2space import Mprage2space
 from loss_functions.vgg_loss import VGGLoss
+from utils.utils_batchgenerators import load_checkpoint, evaluate
 
 torch.backends.cudnn.benchmark = True
+from command_line_arguments.command_line_arguments import CommandLineArguments
 
+config.TRAINER = os.path.basename(__file__)[:-3]
 
 def get_split():
     random.seed(config.FOLD)
@@ -65,11 +68,11 @@ def train_fn(
 
         start_idx = random.randint(0, 244 - config.RAND_SAMPLE_SIZE - 1)
 
-        x = torch.from_numpy(batch["data"][:, :, :, :, start_idx:start_idx+config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
-        y = torch.from_numpy(batch["seg"][:, :, :, :, start_idx:start_idx+config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
+        x = torch.from_numpy(batch["data"][:, :, :, :, start_idx:start_idx + config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
+        y = torch.from_numpy(batch["seg"][:, :, :, :, start_idx:start_idx + config.RAND_SAMPLE_SIZE]).to(config.DEVICE)
 
-        x = torch.einsum('ijkl->lijk', torch.squeeze(x)[None, :, :, :])
-        y = torch.einsum('ijkl->lijk', torch.squeeze(y)[None, :, :, :])
+        x = torch.reshape(x, (-1, 1, 256, 256))
+        y = torch.reshape(y, (-1, 1, 256, 256))
 
         # Train Discriminator
         with torch.cuda.amp.autocast():
@@ -86,10 +89,6 @@ def train_fn(
             d_scaler.update()
             # Train generator
             with torch.cuda.amp.autocast():
-                # D_fake = disc(x, y_fake)
-                # G_fake_loss = bce(D_fake, torch.ones_like(D_fake))
-                # L1 = l1_loss(y_fake, y) * config.L1_LAMBDA
-                # G_loss = G_fake_loss + L1
                 G_loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256),
                                   y.expand(config.RAND_SAMPLE_SIZE, 3, 256, 256))  # Expand single value to RGB
 
@@ -107,16 +106,12 @@ def train_fn(
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--fold', default=0,
-                        help='The fold number for k-fold-crossval', required=False, type=int)
-    parser.add_argument('-ss', '--sample_size', default=2,
-                        help='Num of sLices used per patient', required=False, type=int)
+    cma = CommandLineArguments()
+    cma.parser.add_argument('-ss', '--sample_size', default=2,
+                            help='Slices per patient', required=True, type=int)
+    cma.parse_args()
+    config.RAND_SAMPLE_SIZE = cma.args.sample_size
 
-    args = parser.parse_args()
-
-    config.FOLD = args.fold
-    config.RAND_SAMPLE_SIZE = args.sample_size
     # DATA
     train_samples, val_samples = get_split()
 
@@ -135,6 +130,11 @@ if __name__ == '__main__':
     dl_val = Mprage2space(val_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
                           return_incomplete=False, shuffle=False)
 
+    mt_val = MultiThreadedAugmenter(
+        data_loader=dl_val,
+        transform=Compose([]),
+        num_processes=config.NUM_WORKERS,
+    )
     # MODEL
     disc = Discriminator(in_channels=1).to(config.DEVICE)
     gen = Generator(in_channels=1, features=64).to(config.DEVICE)
@@ -143,15 +143,29 @@ if __name__ == '__main__':
     opt_gen = optim.Adam(gen.parameters(), lr=config.LEARNING_RATE, betas=(0.5, 0.999))
 
     BCE = nn.BCEWithLogitsLoss()
-    # L1_LOSS = nn.L1Loss()
     VGG_Loss = VGGLoss()
 
     if config.LOAD_MODEL:
         load_checkpoint(
-            os.path.join("fold_" + str(config.FOLD), config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
+            os.path.join(config.LOAD_MODEL_PATH, config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
         )
         load_checkpoint(
-            os.path.join("fold_" + str(config.FOLD), config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
+            os.path.join(config.LOAD_MODEL_PATH, config.CHECKPOINT_DISC_BEST), disc, opt_disc, config.LEARNING_RATE,
+        )
+    if config.RESUME_TRAINING:
+        with open(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(config.FOLD), 'training_info.json'),
+                  'r') as train_file:
+            data = json.load(train_file)
+            config.RESUME_TRAINING_EPOCH = sorted(list(map(int, data.keys())), reverse=True)[0]
+
+        config.RESUME_TRAINING_PATH = os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(config.FOLD))
+
+        load_checkpoint(
+            os.path.join(config.RESUME_TRAINING_PATH, config.CHECKPOINT_GEN_BEST), gen, opt_gen, config.LEARNING_RATE,
+        )
+        load_checkpoint(
+            os.path.join(config.RESUME_TRAINING_PATH, config.CHECKPOINT_DISC_BEST), disc, opt_disc,
+            config.LEARNING_RATE,
         )
 
     rand_slices = False
@@ -166,4 +180,4 @@ if __name__ == '__main__':
             disc, gen, mt_train, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
         )
 
-        evaluate(gen, disc, dl_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)
+        evaluate(gen, disc, mt_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)

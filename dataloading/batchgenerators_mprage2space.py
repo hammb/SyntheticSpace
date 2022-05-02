@@ -2,6 +2,7 @@ import os
 import random
 
 from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
+from batchgenerators.dataloading.single_threaded_augmenter import SingleThreadedAugmenter
 from batchgenerators.dataloading.data_loader import DataLoader
 from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
 from batchgenerators.transforms.abstract_transforms import Compose
@@ -18,17 +19,15 @@ class Mprage2space(DataLoader):
     def __init__(self, data, batch_size, patch_size, num_threads_in_multithreaded, seed_for_shuffle=1234,
                  return_incomplete=False,
                  shuffle=True):
-
         super().__init__(data, batch_size, num_threads_in_multithreaded, seed_for_shuffle, return_incomplete, shuffle,
                          False)
 
         self.patch_size = patch_size
         self.num_modalities = 1
-        self.indices = list(range(len(data)))
+        self.indices = list(range(len(self._data)))
 
     def generate_train_batch(self):
         idx = self.get_indices()
-
         patients_for_batch = [self._data[i] for i in idx]
 
         # initialize empty array for data and seg
@@ -86,7 +85,9 @@ if __name__ == '__main__':
 
     random.seed(fold)
 
-    all_samples = os.listdir(config.TRAIN_DIR)
+    config.TASK = "Task004_mprage2space"
+    config.TRAIN_DIR = "/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/Task004_mprage2space"
+    all_samples = os.listdir("/home/AD/b556m/data/SyntheticSpace/preprocessed_data/tasks/Task004_mprage2space")
 
     percentage_val_samples = 15
     # 15% val. data
@@ -96,18 +97,18 @@ if __name__ == '__main__':
 
     train_samples = list(filter(lambda sample: sample not in val_samples, all_samples))
 
-    dl = Mprage2space(train_samples, batch_size, patch_size, num_threads_in_mt, seed_for_shuffle=1234,
-                      return_incomplete=False, shuffle=True)
+    dl_train = Mprage2space(val_samples, config.BATCH_SIZE, config.PATCH_SIZE, num_threads_in_mt,
+                            seed_for_shuffle=config.FOLD,
+                            return_incomplete=False, shuffle=True)
 
-    transform = get_train_transform(patch_size)
+    transform = get_train_transform(config.PATCH_SIZE)
 
-    mt = MultiThreadedAugmenter(
-        data_loader=dl,
+    mt_train = MultiThreadedAugmenter(
+        data_loader=dl_train,
         transform=transform,
-        num_processes=num_threads_in_mt,
+        num_processes=num_threads_in_mt
     )
 
-    for epoch in range(1):
-        for batch_id, batch in enumerate(tqdm(dl)):
-            print(batch_id, batch["sample"])
-
+    for batch in mt_train:
+        print(batch["sample"])
+        print("test")

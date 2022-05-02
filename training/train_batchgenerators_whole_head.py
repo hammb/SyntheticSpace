@@ -3,38 +3,76 @@ import json
 import os
 import random
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from batchgenerators.dataloading.multi_threaded_augmenter import MultiThreadedAugmenter
+from batchgenerators.transforms.abstract_transforms import Compose
+from batchgenerators.transforms.spatial_transforms import SpatialTransform_2
 from tqdm import tqdm
 
 import config
 from architectures.discriminator_model import Discriminator
 from architectures.generator_model import Generator
 from command_line_arguments.command_line_arguments import CommandLineArguments
-from dataloading.mprage2space import Mprage2space
+from dataloading.batchgenerators_mprage2space import Mprage2space
 from loss_functions.vgg_loss import VGGLoss
-from utils.utils_dataloader import load_checkpoint, evaluate
+from utils.utils_batchgenerators import load_checkpoint, evaluate
 
 torch.backends.cudnn.benchmark = True
 
 config.TRAINER = os.path.basename(__file__)[:-3]
 
+
+def get_split():
+    random.seed(config.FOLD)
+
+    all_samples = os.listdir(config.TRAIN_DIR)
+
+    percentage_val_samples = 15
+    # 15% val. data
+
+    num_val_samples = int(len(all_samples) / 100 * percentage_val_samples)
+    val_samples = random.sample(all_samples, num_val_samples)
+
+    train_samples = list(filter(lambda sample: sample not in val_samples, all_samples))
+
+    return train_samples, val_samples
+
+
+def get_train_transform(patch_size):
+    tr_transforms = []
+
+    tr_transforms.append(
+        SpatialTransform_2(
+            patch_size, [i // 2 for i in patch_size],
+            do_elastic_deform=False,
+            do_rotation=True,
+            do_scale=False,
+            random_crop=False,
+            p_rot_per_sample=0.66,
+        )
+    )
+
+    tr_transforms = Compose(tr_transforms)
+    return tr_transforms
+
+
 def train_fn(
         disc, gen, loader, opt_disc, opt_gen, bce, VGG_Loss, g_scaler, d_scaler, epoch
 ):
-    loop = tqdm(loader, leave=True)
+    loop = tqdm(loader, total=len(loader.generator.indices), leave=True)
     loop.set_description("Training Epoch Nr.: " + str(epoch))
     random.seed(epoch)
 
-    for batch_idx, (x, y) in enumerate(loop):
+    for batch_idx, batch in enumerate(loop):
+
+        x = torch.from_numpy(batch["data"]).to(config.DEVICE)
+        y = torch.from_numpy(batch["seg"]).to(config.DEVICE)
 
         x = torch.reshape(x, (-1, 1, 256, 256))
         y = torch.reshape(y, (-1, 1, 256, 256))
-
-        x = x.to(config.DEVICE)
-        y = y.to(config.DEVICE)
 
         # Train Discriminator
         with torch.cuda.amp.autocast():
@@ -52,8 +90,7 @@ def train_fn(
             # Train generator
             with torch.cuda.amp.autocast():
                 G_loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256),
-                                  y.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256))
-                # Expand single value to RGB
+                                  y.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256))  # Expand single value to RGB
 
             opt_gen.zero_grad()
             g_scaler.scale(G_loss).backward()
@@ -71,29 +108,34 @@ if __name__ == '__main__':
 
     cma = CommandLineArguments()
     cma.parse_args()
+    # DATA
+    train_samples, val_samples = get_split()
 
-    # DATA -------------
-    train_dataset = Mprage2space(root_dir=config.TRAIN_DIR, fold=config.FOLD, rand_slices=True, val=False,
-                                 percentage_val_samples=15, augmentation=config.AUGMENTATION)
+    dl_train = Mprage2space(train_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
+                            seed_for_shuffle=config.FOLD,
+                            return_incomplete=False, shuffle=True)
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        num_workers=config.NUM_WORKERS
+    transform = get_train_transform(config.PATCH_SIZE)
+
+    mt_train = MultiThreadedAugmenter(
+        data_loader=dl_train,
+        transform=transform,
+        num_processes=config.NUM_WORKERS
     )
 
-    val_dataset = Mprage2space(root_dir=config.TRAIN_DIR, fold=config.FOLD, rand_slices=True, val=True,
-                               percentage_val_samples=15, augmentation=False)
+    dl_val= Mprage2space(val_samples, config.BATCH_SIZE, config.PATCH_SIZE, config.NUM_WORKERS,
+                            seed_for_shuffle=config.FOLD,
+                            return_incomplete=False, shuffle=True)
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        num_workers=config.NUM_WORKERS
+    transform = get_train_transform(config.PATCH_SIZE)
+
+    mt_val = MultiThreadedAugmenter(
+        data_loader=dl_val,
+        transform=Compose([]),
+        num_processes=config.NUM_WORKERS
     )
 
-    # MODEL -------------
+    # MODEL
     disc = Discriminator(in_channels=1).to(config.DEVICE)
     gen = Generator(in_channels=1, features=64).to(config.DEVICE)
 
@@ -126,12 +168,16 @@ if __name__ == '__main__':
             config.LEARNING_RATE,
         )
 
+    rand_slices = False
+    percentage_val_samples = 15
+    rand_spacing = True
+
     g_scaler = torch.cuda.amp.GradScaler()
     d_scaler = torch.cuda.amp.GradScaler()
 
-    for epoch in range(config.RESUME_TRAINING_EPOCH, config.NUM_EPOCHS):
+    for epoch in range(0, config.NUM_EPOCHS):
         train_fn(
-            disc, gen, train_loader, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
+            disc, gen, mt_train, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
         )
 
-        evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)
+        evaluate(gen, disc, mt_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)
