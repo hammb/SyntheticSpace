@@ -7,6 +7,7 @@ import json
 import statistics
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import random
 
 
 def save_some_examples(gen, val_loader, epoch, folder):
@@ -49,8 +50,17 @@ def load_checkpoint(checkpoint_file, model, optimizer, lr):
 
 
 def save_validation_loss_plot(data, fold):
-    plt.plot(data.keys(), data.values(), 'ro')
-    plt.ylabel('VGG Loss')
+
+    G_losses = []
+    D_losses = []
+
+    for key in data:
+        G_losses.append(data[key][0])
+        D_losses.append(data[key][1])
+
+    plt.plot(data.keys(), G_losses, 'ro')
+    plt.plot(data.keys(), D_losses, 'bo')
+    plt.ylabel('Losses')
     plt.savefig(
         os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "validation_loss.png"))
 
@@ -71,7 +81,7 @@ def ev(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
         print(x.shape)
 
 
-def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
+def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold, bce):
     """
 
     :rtype: object
@@ -86,22 +96,43 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
     loop = tqdm(val_loader, total=len(val_loader.generator.indices), leave=True)
     loop.set_description("Evaluating Epoch Nr.: " + str(epoch))
 
-    losses = []
+    random.seed(epoch)
+    G_losses = []
+    D_losses = []
+
     for batch_idx, batch in enumerate(loop):
 
-        x = torch.from_numpy(batch["data"]).to(config.DEVICE)
-        y = torch.from_numpy(batch["seg"]).to(config.DEVICE)
+        start_idx = random.randint(0, 244 - config.RAND_SAMPLE_SIZE - 1)
+
+        if config.TRAINER == "train_batchgenerators":
+            x = torch.from_numpy(batch["data"][:, :, :, :, start_idx:start_idx + config.RAND_SAMPLE_SIZE]).to(
+                config.DEVICE)
+            y = torch.from_numpy(batch["seg"][:, :, :, :, start_idx:start_idx + config.RAND_SAMPLE_SIZE]).to(
+                config.DEVICE)
+        else:
+            x = torch.from_numpy(batch["data"]).to(config.DEVICE)
+            y = torch.from_numpy(batch["seg"]).to(config.DEVICE)
 
         x = torch.reshape(x, (-1, 1, 256, 256))
         y = torch.reshape(y, (-1, 1, 256, 256))
 
         with torch.no_grad():
             y_fake = gen(x)
-            loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256),
-                            y.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256))
-            losses.append(float(loss.detach().to('cpu').numpy()))
 
-    mean_loss = statistics.mean(losses)
+            D_real = disc(x, y)
+            D_real_loss = bce(D_real, torch.ones_like(D_real))
+            D_fake = disc(x, y_fake.detach())
+            D_fake_loss = bce(D_fake, torch.zeros_like(D_fake))
+            D_loss = (D_real_loss + D_fake_loss) / 2
+
+            G_loss = VGG_Loss(y_fake.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256),
+                            y.expand(config.RAND_SAMPLE_SIZE * config.BATCH_SIZE, 3, 256, 256))
+
+            G_losses.append(float(G_loss.detach().to('cpu').numpy()))
+            D_losses.append(float(D_loss.detach().to('cpu').numpy()))
+
+    mean_G_loss = statistics.mean(G_losses)
+    mean_D_loss = statistics.mean(D_losses)
 
     if os.path.exists(os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold),
                                    "training_info.json")):
@@ -110,15 +141,20 @@ def evaluate(gen, disc, val_loader, epoch, VGG_Loss, opt_disc, opt_gen, fold):
         json_dict = json.load(f)
         f.close()
 
-        if min(json_dict.values()) > mean_loss:
+        previous_G_losses = []
+
+        for key in json_dict:
+            previous_G_losses.append(json_dict[key][0])
+
+        if min(previous_G_losses) > mean_G_loss:
             save_checkpoint(gen, opt_gen, filename=os.path.join(config.CHECKPOINTS, config.TRAINER,
                                                                 "fold_" + str(fold), config.CHECKPOINT_GEN_BEST))
             save_checkpoint(disc, opt_disc, filename=os.path.join(config.CHECKPOINTS, config.TRAINER,
                                                                   "fold_" + str(fold), config.CHECKPOINT_DISC_BEST))
 
-        json_dict[int(epoch)] = mean_loss
+        json_dict[int(epoch)] = [mean_G_loss, mean_D_loss]
     else:
-        json_dict = {int(epoch): mean_loss}
+        json_dict = {int(epoch): [mean_G_loss, mean_D_loss]}
 
     out_file = open(
         os.path.join(config.CHECKPOINTS, config.TRAINER, "fold_" + str(fold), "training_info.json"),

@@ -39,18 +39,28 @@ class Mprage2space(DataLoader):
 
             # Get image path
 
-            input_image_path = os.path.join(config.TRAIN_DIR, sample,
-                                            "mprage_0.nii.gz")
-            output_image_path = os.path.join(config.TRAIN_DIR, sample,
-                                             "space_0.nii.gz")
+            if os.path.exists(os.path.join(config.TRAIN_DIR, sample, "mprage_0.nii.gz")):
+                input_image_path = os.path.join(config.TRAIN_DIR, sample, "mprage_0.nii.gz")
+                output_image_path = os.path.join(config.TRAIN_DIR, sample, "space_0.nii.gz")
 
-            # Load image
-            input_image = nib.load(input_image_path)
-            output_image = nib.load(output_image_path)
+                # Load image
+                input_image = nib.load(input_image_path)
+                output_image = nib.load(output_image_path)
+
+                # Get tensor from image
+                input_image = input_image.get_fdata()
+                output_image = output_image.get_fdata()
+            else:
+
+                input_image_path = os.path.join(config.TRAIN_DIR, sample, "mprage_0.npy")
+                output_image_path = os.path.join(config.TRAIN_DIR, sample, "space_0.npy")
+
+                input_image = np.load(input_image_path, mmap_mode="r")
+                output_image = np.load(output_image_path, mmap_mode="r")
 
             # Get tensor from image
-            input_image = input_image.get_fdata() / config.MAX_VALUE_MPRAGE
-            output_image = output_image.get_fdata() / config.MAX_VALUE_SPACE
+            input_image = input_image / config.MAX_VALUE_MPRAGE
+            output_image = output_image / config.MAX_VALUE_SPACE
 
             data[i] = input_image
             seg[i] = output_image

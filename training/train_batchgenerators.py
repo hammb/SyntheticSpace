@@ -23,6 +23,7 @@ from command_line_arguments.command_line_arguments import CommandLineArguments
 
 config.TRAINER = os.path.basename(__file__)[:-3]
 
+
 def get_split():
     random.seed(config.FOLD)
 
@@ -180,4 +181,4 @@ if __name__ == '__main__':
             disc, gen, mt_train, opt_disc, opt_gen, BCE, VGG_Loss, g_scaler, d_scaler, epoch
         )
 
-        evaluate(gen, disc, mt_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD)
+        evaluate(gen, disc, mt_val, epoch, VGG_Loss, opt_disc, opt_gen, config.FOLD, BCE)

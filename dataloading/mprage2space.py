@@ -3,6 +3,7 @@ import torch
 import os
 from torch.utils.data import Dataset
 from torch.nn.functional import pad
+import numpy as np
 
 import config
 from config import RAND_SAMPLE_SIZE
@@ -49,16 +50,24 @@ class Mprage2space(Dataset):
 
         sample = self.list_samples[index]
 
-        input_image_path = os.path.join(self.root_dir, sample, "mprage_0.nii.gz")
-        output_image_path = os.path.join(self.root_dir, sample, "space_0.nii.gz")
+        if os.path.exists(os.path.join(self.root_dir, sample, "mprage_0.nii.gz")):
+            input_image_path = os.path.join(self.root_dir, sample, "mprage_0.nii.gz")
+            output_image_path = os.path.join(self.root_dir, sample, "space_0.nii.gz")
 
-        # Load image
-        input_image = nib.load(input_image_path)
-        output_image = nib.load(output_image_path)
+            # Load image
+            input_image = nib.load(input_image_path)
+            output_image = nib.load(output_image_path)
 
-        # Get tensor from image
-        input_image = input_image.get_fdata()
-        output_image = output_image.get_fdata()
+            # Get tensor from image
+            input_image = input_image.get_fdata()
+            output_image = output_image.get_fdata()
+        else:
+
+            input_image_path = os.path.join(self.root_dir, sample, "mprage_0.npy")
+            output_image_path = os.path.join(self.root_dir, sample, "space_0.npy")
+
+            input_image = np.load(input_image_path, mmap_mode="r")
+            output_image = np.load(output_image_path, mmap_mode="r")
 
         # data augemtation
         if self.augmentation:

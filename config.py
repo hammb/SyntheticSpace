@@ -9,7 +9,7 @@ TRAIN_DIR = os.path.join(os.environ['ss_data_path'], TASK)
 
 LEARNING_RATE = 2e-4
 BATCH_SIZE = 1
-RAND_SAMPLE_SIZE = 2
+RAND_SAMPLE_SIZE = 8
 NUM_WORKERS = 2
 IMAGE_SIZE = 256
 CHANNELS_IMG = 1
