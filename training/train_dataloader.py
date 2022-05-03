@@ -70,7 +70,10 @@ def train_fn(
 if __name__ == '__main__':
 
     cma = CommandLineArguments()
+    cma.parser.add_argument('-ss', '--sample_size', default=2,
+                            help='Slices per patient', required=True, type=int)
     cma.parse_args()
+    config.RAND_SAMPLE_SIZE = cma.args.sample_size
 
     # DATA -------------
     train_dataset = Mprage2space(root_dir=config.TRAIN_DIR, fold=config.FOLD, rand_slices=True, val=False,
